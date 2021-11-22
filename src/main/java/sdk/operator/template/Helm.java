@@ -1,32 +1,41 @@
 package sdk.operator.template;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonParser;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
-import io.kubernetes.client.common.KubernetesObject;
-import io.kubernetes.client.util.Yaml;
-import io.kubernetes.client.util.generic.dynamic.DynamicKubernetesObject;
-import org.yaml.snakeyaml.constructor.Constructor;
+import io.fabric8.kubernetes.client.utils.Serialization;
 import sdk.operator.file.FileUtils;
+import sdk.operator.repository.Github;
+
 import java.io.*;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 public class Helm {
     private final String tgzPath;
     private final Path tmpPath;
-
-    public Helm() throws IOException {
-        this.tmpPath = Files.createTempDirectory("helm-");
+    public static final Logger logger = Logger.getLogger(Github.class.getName());
+    public Helm()  {
+        this.tmpPath = createTmpDir();
         this.tgzPath = String.format("%s/%s", tmpPath.toAbsolutePath().toString(), "component.tgz");
     }
 
+    private Path createTmpDir() {
+        Path tmpDir = null;
+        try {
+           tmpDir =  Files.createTempDirectory("helm-");
+        }catch (IOException e ){
+            throw new RuntimeException("Error creating tempfile "+ e.getMessage());
+        }
+        return tmpDir;
+    }
+
     public void DownloadTGZ(String url) {
+        logger.log(Level.INFO, "START_DOWNLOAD_TGZ",url);
         try (BufferedInputStream in = new BufferedInputStream(new URL(url).openStream());
              FileOutputStream fileOutputStream = new FileOutputStream(tgzPath)) {
             byte dataBuffer[] = new byte[1024];
@@ -34,29 +43,29 @@ public class Helm {
             while ((bytesRead = in.read(dataBuffer, 0, 1024)) != -1) {
                 fileOutputStream.write(dataBuffer, 0, bytesRead);
             }
+            logger.log(Level.INFO, "FINISHED_DOWNLOAD_TGZ",url);
         } catch (IOException e) {
             throw new RuntimeException("Failed to download tgz: " + e.getMessage());
         }
     }
 
-    public List<DynamicKubernetesObject> template(String downloadUrl, String componentName) throws IOException, InterruptedException {
+    public List<GenericKubernetesResource> template(String downloadUrl, String componentName, String namespace) throws IOException, InterruptedException {
+        this.logger.info("START_GENERATE_TEMPLATE");
         this.DownloadTGZ(downloadUrl);
         this.saveChartFiles();
-        var manifestsString = this.exec(String.format("helm template %s/%s --namespace=default", tmpPath.toAbsolutePath(), componentName));
+        var manifestsString = this.exec(String.format("helm template %s/%s --namespace=%s", tmpPath.toAbsolutePath(), componentName, namespace));
         var manifests = getManifestsObjects(manifestsString);
         this.cleanFiles();
+        manifests.removeAll(Collections.singleton(null));
+        this.logger.info("FINISH_GENERATE_TEMPLATE");
         return manifests;
     }
 
-    private List<DynamicKubernetesObject> getManifestsObjects(String manifestsString) throws IOException {
-        List<Object> manifestObjects =  Yaml.loadAll(manifestsString);
-        var manifests = manifestObjects.stream()
-                .map(object -> (KubernetesObject) object)
-                .map(manifestObject -> new GsonBuilder().setLenient().create().toJson(manifestObject))
-                .map(manifestString -> JsonParser.parseString(manifestString).getAsJsonObject())
-                .map(DynamicKubernetesObject::new)
+    private List<GenericKubernetesResource> getManifestsObjects(String manifestsString) throws IOException {
+        List<String> manifestsArray = List.of(manifestsString.split("---"));
+        var manifests = manifestsArray.stream()
+                .map( string -> Serialization.unmarshal(string, GenericKubernetesResource.class))
                 .collect(Collectors.toList());
-        System.out.println(manifests);
         return manifests;
     }
 

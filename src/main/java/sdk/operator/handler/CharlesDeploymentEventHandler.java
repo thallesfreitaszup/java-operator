@@ -2,7 +2,6 @@ package sdk.operator.handler;
 
 import io.fabric8.kubernetes.client.informers.ResourceEventHandler;
 import io.fabric8.kubernetes.client.informers.cache.Cache;
-import sdk.operator.controller.DeploymentController;
 import sdk.operator.resource.charlesdeployment.CharlesDeployment;
 
 import java.util.concurrent.BlockingQueue;
@@ -12,7 +11,7 @@ public class CharlesDeploymentEventHandler implements ResourceEventHandler<Charl
 
     private final BlockingQueue<String> workqueue;
 
-    public static final Logger logger = Logger.getLogger(DeploymentController.class.getName());
+    public static final Logger logger = Logger.getLogger(CharlesDeploymentEventHandler.class.getName());
 
     public CharlesDeploymentEventHandler(BlockingQueue<String> workqueue) {
         this.workqueue = workqueue;
@@ -27,11 +26,14 @@ public class CharlesDeploymentEventHandler implements ResourceEventHandler<Charl
 
     @Override
     public void onUpdate(CharlesDeployment charlesDeployment, CharlesDeployment t1) {
-
+        logger.info("CharlesDeployment " + charlesDeployment.getMetadata().getName() + " UPDATED");
+        enqueueCharlesDeployment(charlesDeployment);
     }
 
     @Override
     public void onDelete(CharlesDeployment charlesDeployment, boolean b) {
+        logger.info("CharlesDeployment " + charlesDeployment.getMetadata().getName() + " DELETED");
+        enqueueCharlesDeployment(charlesDeployment);
     }
 
 

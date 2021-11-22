@@ -1,26 +1,25 @@
 package sdk.operator;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import io.fabric8.kubernetes.api.model.Service;
+import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.Client;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext;
-import io.kubernetes.client.openapi.ApiClient;
+import io.fabric8.kubernetes.client.informers.SharedIndexInformer;
+import io.fabric8.kubernetes.client.informers.SharedInformerFactory;
 import io.kubernetes.client.openapi.ApiException;
-import io.kubernetes.client.util.ClientBuilder;
-import io.kubernetes.client.util.generic.dynamic.DynamicKubernetesApi;
-import io.kubernetes.client.util.generic.dynamic.DynamicKubernetesObject;
-import sdk.operator.repository.Factory;
-import sdk.operator.repository.RepositoryType;
-import sdk.operator.template.Helm;
+import sdk.operator.controller.CharlesDeploymentController;
+import sdk.operator.resource.charlesdeployment.CharlesDeployment;
 
 import java.io.IOException;
-import java.util.Collections;
+import java.nio.file.Files;
 import java.util.Locale;
-import java.util.stream.Collectors;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Hello world!
@@ -28,18 +27,24 @@ import java.util.stream.Collectors;
  */
 public class App 
 {
+    public static final Logger logger = Logger.getLogger(App.class.getName());
     public static void main( String[] args ) throws IOException, InterruptedException, ApiException {
-        var helm = new Helm();
-        var repository = Factory.newRepository(RepositoryType.GITHUB);
-        var content = repository.getContent("https://api.github.com/repos/thallesfreitaszup/event-receiver/contents/event-receiver?ref=main");
-        var tgzContent = repository.getTGZFromContent(content);
-        var k8sObjects = helm.template(tgzContent.getDownloadUrl(), "event-receiver");
-        ApiClient apiClient = ClientBuilder.standard().build();
-        for (var k8sObject : k8sObjects){
-            var plural = String.format("%s%s", k8sObject.getKind().toLowerCase(Locale.ROOT), "s");
-            DynamicKubernetesApi dynamicApi = new DynamicKubernetesApi("", k8sObject.getApiVersion(), plural, apiClient);
-            var createdObject = dynamicApi.create(k8sObject).throwsApiException().getHttpStatusCode();
-            System.out.println(createdObject);
+
+        try (final KubernetesClient client = new DefaultKubernetesClient()) {
+            SharedInformerFactory informerFactory = client.informers();
+
+            SharedIndexInformer<CharlesDeployment> charlesDeploymentInformer = informerFactory.sharedIndexInformerForCustomResource(CharlesDeployment.class, 10 * 60 * 1000);
+            SharedIndexInformer<Deployment> deploymentIndexInformer = informerFactory.sharedIndexInformerFor(Deployment.class, 10 * 60 * 1000);
+            SharedIndexInformer<Service> serviceInformer = informerFactory.sharedIndexInformerFor(Service.class, 10 * 60 * 1000);
+            CharlesDeploymentController charlesDeploymentController = new CharlesDeploymentController(deploymentIndexInformer, charlesDeploymentInformer, serviceInformer,client);
+            charlesDeploymentController.create();
+            Future<Void> startedInformersFuture = informerFactory.startAllRegisteredInformers();
+            startedInformersFuture.get();
+            charlesDeploymentController.run();
+
+            }catch(KubernetesClientException | ExecutionException exception ) {
+            logger.log(Level.SEVERE, "Kubernetes Client Exception : " + exception.getMessage());
         }
     }
+
 }

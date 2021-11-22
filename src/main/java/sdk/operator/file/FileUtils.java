@@ -4,8 +4,6 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.apache.commons.compress.utils.IOUtils;
-import org.slf4j.LoggerFactory;
-import sdk.operator.controller.DeploymentController;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -42,15 +40,12 @@ public class FileUtils {
             @Override
             public FileVisitResult visitFile(Path file,
                                              BasicFileAttributes attrs) throws IOException {
-                logger.info("Deleting " + file.getFileName());
                 Files.delete(file);
-                logger.info("DELETED " + file.getFileName());
                 return FileVisitResult.CONTINUE;
             }
 
             @Override
             public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                logger.info("Delete file " + file + " failed: "+exc.getMessage());
                 try {
                     Files.delete(file);
                 } catch (IOException e) {

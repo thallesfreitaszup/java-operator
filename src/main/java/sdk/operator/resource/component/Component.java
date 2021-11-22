@@ -11,6 +11,8 @@ public class Component {
 
     private RepositoryType provider;
 
+    private String namespace;
+
     public String getName() {
         return name;
     }
@@ -41,5 +43,13 @@ public class Component {
 
     public void setProvider(RepositoryType provider) {
         this.provider = provider;
+    }
+
+    public String getNamespace() {
+        return namespace;
+    }
+
+    public void setNamespace(String namespace) {
+        this.namespace = namespace;
     }
 }

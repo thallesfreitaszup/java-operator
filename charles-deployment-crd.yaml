@@ -29,10 +29,6 @@ spec:
                         type: string
                       chart:
                         type: string
-                      provider:
-                          type: string
-                      namespace:
-                        type: string
                     required:
                       - name
                       - tag
