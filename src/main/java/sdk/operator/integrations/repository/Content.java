@@ -1,4 +1,4 @@
-package sdk.operator.repository;
+package sdk.operator.integrations.repository;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -24,5 +24,13 @@ public class Content {
 
     public void setDownloadUrl(String downloadUrl) {
         this.downloadUrl = downloadUrl;
+    }
+
+    @Override
+    public String toString() {
+        return "Content{" +
+                "name='" + name + '\'' +
+                ", downloadUrl='" + downloadUrl + '\'' +
+                '}';
     }
 }

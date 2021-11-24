@@ -1,27 +1,31 @@
 package sdk.operator.controller;
 
+import sdk.operator.integrations.repository.Factory;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
+import io.fabric8.kubernetes.client.dsl.MixedOperation;
+import io.fabric8.kubernetes.client.dsl.Resource;
 import io.fabric8.kubernetes.client.informers.ResourceEventHandler;
 import io.fabric8.kubernetes.client.informers.SharedIndexInformer;
 import io.fabric8.kubernetes.client.informers.cache.Lister;
-import io.kubernetes.client.util.generic.dynamic.DynamicKubernetesApi;
-import io.kubernetes.client.util.generic.dynamic.DynamicKubernetesObject;
 import sdk.operator.handler.CharlesDeploymentEventHandler;
 import sdk.operator.handler.DeploymentEventHandler;
 import sdk.operator.handler.ServiceEventHandler;
-import sdk.operator.repository.Factory;
 import sdk.operator.resource.charlesdeployment.CharlesDeployment;
+import sdk.operator.resource.charlesdeployment.CharlesDeploymentList;
+import sdk.operator.resource.charlesdeployment.ChildResource;
 import sdk.operator.resource.component.Component;
 import sdk.operator.template.Helm;
 import sdk.operator.utils.K8sUtils;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 public class CharlesDeploymentController {
 
@@ -34,15 +38,17 @@ public class CharlesDeploymentController {
     private final SharedIndexInformer<Service> serviceInformer;
     private final KubernetesClient kubernetesClient;
     public static final Logger logger = Logger.getLogger(CharlesDeploymentController.class.getName());
-    private  Helm helm;
-    private  K8sUtils k8sUtils;
+    private final MixedOperation<CharlesDeployment, CharlesDeploymentList, Resource<CharlesDeployment>> charlesDeploymentClient;
+    private final Helm helm;
+    private final K8sUtils k8sUtils;
 
     public CharlesDeploymentController(
             SharedIndexInformer<Deployment> deploymentInformer,
             SharedIndexInformer<CharlesDeployment> charlesDeploymentSharedIndexInformer,
             SharedIndexInformer<Service> serviceInformer,
-            KubernetesClient kubernetesClient
-            ) {
+            KubernetesClient kubernetesClient,
+            MixedOperation<CharlesDeployment, CharlesDeploymentList, Resource<CharlesDeployment>> charlesDeploymentClient
+    ) {
         this.workqueue = new ArrayBlockingQueue<>(1024);
         this.deploymentInformer = deploymentInformer;
         this.charlesDeploymentInformer = charlesDeploymentSharedIndexInformer;
@@ -53,10 +59,11 @@ public class CharlesDeploymentController {
         this.kubernetesClient = kubernetesClient;
         this.helm = new Helm();
         this.k8sUtils = new K8sUtils(this.kubernetesClient);
+        this.charlesDeploymentClient = charlesDeploymentClient;
     }
     public void create() {
-        ResourceEventHandler<Deployment> deploymentEventHandler = new DeploymentEventHandler(this.workqueue);
-        ResourceEventHandler<Service> serviceEventHandler = new ServiceEventHandler(this.workqueue);
+        ResourceEventHandler<Deployment> deploymentEventHandler = new DeploymentEventHandler(this.workqueue, this.charlesDeploymentLister);
+        ResourceEventHandler<Service> serviceEventHandler = new ServiceEventHandler(this.workqueue, this.charlesDeploymentLister);
         ResourceEventHandler<CharlesDeployment> charlesDeploymentEventHandler = new CharlesDeploymentEventHandler(this.workqueue);
 
         this.deploymentInformer.addEventHandler(deploymentEventHandler);
@@ -100,24 +107,61 @@ public class CharlesDeploymentController {
     }
 
     private void reconcile(CharlesDeployment charlesDeployment) {
-             charlesDeployment.getSpec().getComponents().stream().parallel().forEach(
-                     it -> this.createCharlesComponent(it, charlesDeployment)
-             );
+
+        var notSyncedComponents = getNotSyncComponents(charlesDeployment);
+        if (notSyncedComponents.isEmpty()) {
+            return;
+        }
+         notSyncedComponents.stream().parallel().forEach(
+                 it -> this.createCharlesComponent(it, charlesDeployment)
+         );
+    }
+
+    private boolean isChildSync(ChildResource it) {
+        if (this.k8sUtils.getResource(it.getApiVersion(), it.getPlural(), it.getName()) == null ) {
+            return false;
+        }
+        return true;
+    }
+
+    private List<Component> getNotSyncComponents(CharlesDeployment charlesDeployment) {
+        return charlesDeployment.getSpec().getComponents()
+                .stream()
+                .filter(it -> isNotSync(it, charlesDeployment.getSpec().getChildResources()))
+                .collect(Collectors.toList());
+    }
+
+    private boolean isNotSync(Component component, List<ChildResource> childResourceList) {
+        if ( childResourceList == null || childResourceList.isEmpty()){
+            return true;
+        }
+        
+        var unSyncChildren = childResourceList.stream().filter(it -> it.getComponentName().equals(component.getName())).filter(
+                childResource -> !isChildSync(childResource)
+        ).collect(Collectors.toList());
+        return !unSyncChildren.isEmpty();
     }
 
     private void createCharlesComponent(Component component, CharlesDeployment charlesDeployment) {
         try {
             var repository = Factory.newRepository(component.getProvider());
-            var contents = repository.getContent(component.getChart());
+            var contents = repository.getContent(component);
             var tgzContent = repository.getTGZFromContent(contents);
-            var manifests = this.helm.template(tgzContent.getDownloadUrl(), component.getName(), component.getNamespace());
+            var manifests = this.helm.template(tgzContent.getDownloadUrl(), component);
             for (var manifest : manifests) {
-                    this.k8sUtils.applyManifest(manifest, charlesDeployment);
+                this.k8sUtils.applyManifest(manifest, charlesDeployment);
+                charlesDeployment.createChildren(component.getName(),manifest);
             }
-//            DynamicKubernetesApi = new DynamicKubernetesApi("", "")
+            charlesDeployment.updateStatus(true);
+            updateCharlesDeploymentStatus(charlesDeployment);
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void updateCharlesDeploymentStatus(CharlesDeployment charlesDeployment) {
+        this.charlesDeploymentClient.inNamespace(charlesDeployment.getMetadata().getNamespace())
+                .withName(charlesDeployment.getMetadata().getName()).patch(charlesDeployment);
     }
 
 }

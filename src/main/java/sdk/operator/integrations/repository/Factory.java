@@ -1,4 +1,4 @@
-package sdk.operator.repository;
+package sdk.operator.integrations.repository;
 
 public class Factory {
 

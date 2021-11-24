@@ -3,7 +3,8 @@ package sdk.operator.template;
 import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import sdk.operator.file.FileUtils;
-import sdk.operator.repository.Github;
+import sdk.operator.integrations.repository.Github;
+import sdk.operator.resource.component.Component;
 
 import java.io.*;
 import java.net.URL;
@@ -16,8 +17,8 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class Helm {
-    private final String tgzPath;
-    private final Path tmpPath;
+    private String tgzPath;
+    private Path tmpPath;
     public static final Logger logger = Logger.getLogger(Github.class.getName());
     public Helm()  {
         this.tmpPath = createTmpDir();
@@ -35,6 +36,11 @@ public class Helm {
     }
 
     public void DownloadTGZ(String url) {
+        if ( !Files.exists(this.tmpPath))
+        {
+            this.tmpPath = createTmpDir();
+            this.tgzPath = String.format("%s/%s", tmpPath.toAbsolutePath().toString(), "component.tgz");
+        }
         logger.log(Level.INFO, "START_DOWNLOAD_TGZ",url);
         try (BufferedInputStream in = new BufferedInputStream(new URL(url).openStream());
              FileOutputStream fileOutputStream = new FileOutputStream(tgzPath)) {
@@ -49,16 +55,25 @@ public class Helm {
         }
     }
 
-    public List<GenericKubernetesResource> template(String downloadUrl, String componentName, String namespace) throws IOException, InterruptedException {
-        this.logger.info("START_GENERATE_TEMPLATE");
+    public List<GenericKubernetesResource> template(String downloadUrl, Component component) throws IOException, InterruptedException {
+        this.logger.info("START_GENERATE_TEMPLATE"+downloadUrl);
         this.DownloadTGZ(downloadUrl);
         this.saveChartFiles();
-        var manifestsString = this.exec(String.format("helm template %s/%s --namespace=%s", tmpPath.toAbsolutePath(), componentName, namespace));
+        var overrideValues = getValuesToOverride(component.getImage());
+        var valuesPath = String.format("%s/%s/%s.yaml", tmpPath.toAbsolutePath(), component.getName(), component.getName());
+        var command = String.format(
+                "helm template  %s/%s --namespace=%s  --values=%s  --name-template=%s --set %s",
+                tmpPath.toAbsolutePath(), component.getName(), component.getNamespace(),valuesPath, component.getName(), overrideValues);
+        var manifestsString = this.exec(command);
         var manifests = getManifestsObjects(manifestsString);
         this.cleanFiles();
         manifests.removeAll(Collections.singleton(null));
-        this.logger.info("FINISH_GENERATE_TEMPLATE");
+        this.logger.log(Level.INFO, "FINISH_GENERATE_TEMPLATE", manifests);
         return manifests;
+    }
+
+    private String getValuesToOverride(String image) {
+        return String.format("image.url=%s",image);
     }
 
     private List<GenericKubernetesResource> getManifestsObjects(String manifestsString) throws IOException {
@@ -77,18 +92,29 @@ public class Helm {
         FileUtils.decompress(tgzPath, new File(tmpPath.toAbsolutePath().toString()));
     }
 
-    private String exec(String cmd) throws InterruptedException, IOException {
-        StringBuffer singleFile = new StringBuffer();
-        Runtime run = Runtime.getRuntime();
-        Process pr = run.exec(cmd);
-        pr.waitFor();
-        var bufReader = new BufferedReader(new InputStreamReader(pr.getInputStream()));
-        var line = "";
-        while((line = bufReader.readLine()) != null){
-            singleFile.append(line);
-            singleFile.append(System.getProperty("line.separator"));
+    private String exec(String cmd)  {
+        try {
+            Process process = Runtime.getRuntime().exec(cmd);
+
+
+            StringBuilder output = new StringBuilder();
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream()));
+
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line + "\n");
+            }
+
+            int exitVal = process.waitFor();
+            if (exitVal != 0) {
+                throw new RuntimeException("Exited with error code: "+exitVal);
+            }
+        return output.toString();
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException("Exited with error code: "+e.getMessage());
         }
-        return singleFile.toString();
     }
 
 }

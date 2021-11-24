@@ -10,7 +10,7 @@ spec:
         # One and only one version must be marked as the storage version.
       storage: true
       subresources:
-        status: { }
+        status: {}
       schema:
         openAPIV3Schema:
           type: object
@@ -18,6 +18,19 @@ spec:
             spec:
               type: object
               properties:
+                childResources:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      apiVersion:
+                        type: string
+                      name:
+                        type: string
+                      plural:
+                        type: string
+                      componentName:
+                          type: string
                 components:
                   type: array
                   items:
@@ -25,20 +38,26 @@ spec:
                     properties:
                       name:
                         type: string
-                      tag:
+                      image:
                         type: string
                       chart:
                         type: string
+                      provider:
+                          type: string
+                      namespace:
+                        type: string
+                      token:
+                        type: string
                     required:
                       - name
-                      - tag
                       - chart
                       - provider
                       - namespace
+                      - image
   scope: Namespaced
   names:
     plural: charlesdeployments
-    singular: charlesdeployments
+    singular: charlesdeployment
     kind: CharlesDeployment
     shortNames:
     - cd
