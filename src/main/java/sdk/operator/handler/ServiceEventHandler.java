@@ -33,7 +33,7 @@ public class ServiceEventHandler implements ResourceEventHandler<Service> {
 
     @Override
     public void onDelete(Service service, boolean b) {
-        logger.info("Service " + service.getMetadata().getName() + " ADDED");
+        logger.info("Service " + service.getMetadata().getName() + " DELETED");
         var ownerRef = service.getMetadata().getOwnerReferences().stream().filter(it -> it.getKind().equals("CharlesDeployment")).findAny();
         if (ownerRef.isPresent()) {
             var charlesDeployment = this.charlesDeploymentLister.get(ownerRef.get().getName());

@@ -10,5 +10,4 @@ spec:
       chart: https://api.github.com/repos/zupit/charlescd/contents/samples/quiz-app/charts/quiz-app-backend?ref=update-tgz
       provider: GITHUB
       namespace: default
-      token: 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
   childResources: []
