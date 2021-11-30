@@ -30,10 +30,8 @@ jobs:
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-    - name: Build and push
+    - name: Build push
       id: docker_build
-      uses: docker/build-push-action@v2
-      with:
-        push: true
-        tags: thalleslmf/java-operator:beta-${{ steps.vars.outputs.sha_short }}
-
+      run: docker build -t thalleslmf/java-operator:beta-${{ steps.vars.outputs.sha_short }} .
+    - name: Docker push
+      run: docker push thalleslmf/java-operator:beta-${{ steps.vars.outputs.sha_short }}
