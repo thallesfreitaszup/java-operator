@@ -33,6 +33,5 @@ jobs:
     - name: Build and push
       id: docker_build
       run: |
-         docker build -t thallesf/java-operator:beta-${{ steps.vars.outputs.sha_short }} .
-         docker tag thallesf/java-operator:beta-${{ steps.vars.outputs.sha_short }} thallesf/java-operator:latest
+         docker build -t thallesf/java-operator:beta-${{ steps.vars.outputs.sha_short }} -t thallesf/java-operator:latest .
          docker push thallesf/java-operator
