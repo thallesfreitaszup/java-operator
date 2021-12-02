@@ -20,3 +20,14 @@ Inside the root folder, run the following command:
 
 After the application starts, run: \
      ```kubectl apply -f charles-deployment.yaml```
+
+**Running inside cluster**
+
+
+Inside the root folder, run the following command:
+~~~
+helm install java-operator ./java-operator 
+
+kubectl apply -f charles-deployment.yaml
+~~~~
+
